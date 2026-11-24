@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PLANOVA — Intelligent Demand, Inventory &amp; Supply Planning System</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Mobile sidebar backdrop -->
+  <div id="sidebar-backdrop" class="sidebar-backdrop" aria-hidden="true"></div>
+
+  <div class="app-shell">
+    <!-- Left Navigation Sidebar -->
+    <aside id="sidebar" class="sidebar" aria-label="Primary navigation">
+      <div class="sidebar-brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" width="28" height="28" fill="none">
+            <rect x="2" y="2" width="28" height="28" rx="7" fill="#3B82F6" />
+            <path d="M9 21V11h6.5a4 4 0 0 1 0 8H12v2H9Zm3-5h3.3a1.5 1.5 0 0 0 0-3H12v3Z" fill="#FFFFFF" />
+            <circle cx="22.5" cy="20.5" r="2.5" fill="#93C5FD" />
+          </svg>
+        </div>
+        <div class="brand-text">
+          <span class="brand-title">PLANOVA</span>
+          <span class="brand-subtitle">Supply Planning</span>
+        </div>
+        <button id="sidebar-close-btn" class="icon-btn mobile-only" type="button" aria-label="Close navigation">
+          &times;
+        </button>
+      </div>
+
+      <nav class="sidebar-nav">
+        <button class="nav-item active" data-page="dashboard" type="button">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="7" rx="1.5" />
+              <rect x="14" y="3" width="7" height="7" rx="1.5" />
+              <rect x="3" y="14" width="7" height="7" rx="1.5" />
+              <rect x="14" y="14" width="7" height="7" rx="1.5" />
+            </svg>
+          </span>
+          <span>Dashboard</span>
+        </button>
+
+        <button class="nav-item" data-page="demand-inventory" type="button">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 17l6-6 4 4 8-8" />
+              <path d="M17 7h4v4" />
+            </svg>
+          </span>
+          <span>Demand &amp; Inventory</span>
+        </button>
+
+        <button class="nav-item" data-page="shortages" type="button">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 9v4" />
+              <path d="M12 17h.01" />
+              <path d="M10.3 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+            </svg>
+          </span>
+          <span>Shortage Analysis</span>
+          <span id="nav-shortage-badge" class="nav-badge hidden">0</span>
+        </button>
+
+        <button class="nav-item" data-page="suppliers" type="button">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 7h11v10H3z" />
+              <path d="M14 10h4l3 3v4h-7v-7z" />
+              <circle cx="7.5" cy="18.5" r="1.5" />
+              <circle cx="17.5" cy="18.5" r="1.5" />
+            </svg>
+          </span>
+          <span>Supplier Management</span>
+        </button>
+
+        <button class="nav-item" data-page="mitigations" type="button">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 12l2 2 4-4" />
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />
+            </svg>
+          </span>
+          <span>Mitigation Options</span>
+        </button>
+
+        <button class="nav-item" data-page="validation" type="button">
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <path d="M14 2v6h6" />
+              <path d="M9 15l2 2 4-4" />
+            </svg>
+          </span>
+          <span>Data &amp; Validation</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="sidebar-meta-card">
+          <div class="meta-label">Data Source Status</div>
+          <div id="sidebar-data-status" class="meta-value">No CSVs Loaded</div>
+          <div id="sidebar-file-count" class="meta-sub">Import your Planova CSVs to begin</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <div class="main-wrapper">
+      <!-- Top Header -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <button id="sidebar-open-btn" class="icon-btn mobile-only" type="button" aria-label="Open navigation">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 6h18M3 12h18M3 18h18" />
+            </svg>
+          </button>
+          <div>
+            <h1 class="page-heading">PLANOVA</h1>
+            <p class="page-subheading">Intelligent Demand, Inventory &amp; Supply Planning System</p>
+          </div>
+        </div>
+
+        <div class="topbar-actions">
+          <span id="mode-pill" class="status-pill status-neutral">No Data Loaded</span>
+          <button id="open-import-btn" class="btn btn-primary" type="button">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+            Import CSVs
+          </button>
+          <button id="reset-data-btn" class="btn btn-outline" type="button" title="Clear all imported datasets">
+            Reset Data
+          </button>
+        </div>
+      </header>
+
+      <!-- Demo Mode Warning Banner (hidden unless demo mode active) -->
+      <div id="demo-banner" class="alert-banner alert-warning hidden" role="status">
+        <div>
+          <strong>Demo Mode Active:</strong> You are viewing a small, clearly labelled sample dataset.
+          To analyse your real Planova records, click <strong>Import CSVs</strong> and load your <code>Planova/data</code> files.
+        </div>
+        <button id="exit-demo-btn" class="btn btn-sm btn-outline" type="button">Exit Demo &amp; Reset</button>
+      </div>
+
+      <!-- Empty / Onboarding Banner (shown when no data is loaded) -->
+      <div id="onboarding-banner" class="onboarding-card">
+        <div class="onboarding-content">
+          <div class="onboarding-badge">CSV-Driven Prototype</div>
+          <h2>Load Your Planova Datasets</h2>
+          <p>
+            All KPIs, charts, shortage tables, supplier metrics, and validation checks are calculated directly
+            from your Planova CSV files. Nothing is fabricated when data is missing.
+          </p>
+          <div class="onboarding-actions">
+            <label class="btn btn-primary file-label">
+              Select <code>data/</code> Folder
+              <input id="quick-folder-input" type="file" webkitdirectory directory multiple hidden />
+            </label>
+            <label class="btn btn-secondary file-label">
+              Upload CSV Files
+              <input id="quick-files-input" type="file" accept=".csv" multiple hidden />
+            </label>
+            <button id="quick-demo-btn" class="btn btn-outline" type="button">
+              Load Demo Mode (Small Sample)
+            </button>
+          </div>
+          <p id="auto-load-hint" class="onboarding-hint">
+            Tip: Selecting the <code>Planova/data</code> folder imports all available CSVs in one click—even when opening <code>index.html</code> directly from disk.
+          </p>
+        </div>
+      </div>
+
+      <!-- Main Page Sections -->
+      <main class="content-area">
+
+        <!-- ==================== A. DASHBOARD ==================== -->
+        <section id="page-dashboard" class="page-section active" aria-labelledby="dash-title">
+          <div class="section-header">
+            <div>
+              <h2 id="dash-title">Executive Planning Dashboard</h2>
+              <p>Live supply chain overview computed directly from imported Planova CSV datasets.</p>
+            </div>
+            <div class="section-meta" id="dash-last-updated">Awaiting CSV import</div>
+          </div>
+
+          <!-- KPI Grid -->
+          <div class="kpi-grid">
+            <article class="kpi-card">
+              <div class="kpi-header">
+                <span class="kpi-label">Total SKUs</span>
+                <span class="kpi-icon kpi-blue" aria-hidden="true">SKU</span>
+              </div>
+              <div id="kpi-skus" class="kpi-value muted">Unavailable</div>
+              <div id="kpi-skus-sub" class="kpi-sub">Requires sku.csv</div>
+            </article>
+
+            <article class="kpi-card">
+              <div class="kpi-header">
+                <span class="kpi-label">Total Locations</span>
+                <span class="kpi-icon kpi-blue" aria-hidden="true">LOC</span>
+              </div>
+              <div id="kpi-locations" class="kpi-value muted">Unavailable</div>
+              <div id="kpi-locations-sub" class="kpi-sub">Requires location.csv</div>
+            </article>
+
+            <article class="kpi-card">
+              <div class="kpi-header">
+                <span class="kpi-label">Total Suppliers</span>
+                <span class="kpi-icon kpi-blue" aria-hidden="true">SUP</span>
+              </div>
+              <div id="kpi-suppliers" class="kpi-value muted">Unavailable</div>
+              <div id="kpi-suppliers-sub" class="kpi-sub">Requires supplier.csv</div>
+            </article>
+
+            <article class="kpi-card">
+              <div class="kpi-header">
+                <span class="kpi-label">Total Forecast Demand</span>
+                <span class="kpi-icon kpi-teal" aria-hidden="true">DEM</span>
+              </div>
+              <div id="kpi-demand" class="kpi-value muted">Unavailable</div>
+              <div id="kpi-demand-sub" class="kpi-sub">Requires forecast_demand.csv</div>
+            </article>
+
+            <article class="kpi-card">
+              <div class="kpi-header">
+                <span class="kpi-label">Total Shortage Units</span>
+                <span class="kpi-icon kpi-amber" aria-hidden="true">SHRT</span>
+              </div>
+              <div id="kpi-shortage-units" class="kpi-value muted">Unavailable</div>
+              <div id="kpi-shortage-units-sub" class="kpi-sub">Requires shortages.csv</div>
+            </article>
+
+            <article class="kpi-card kpi-card-critical">
+              <div class="kpi-header">
+                <span class="kpi-label">Critical Shortages</span>
+                <span class="kpi-icon kpi-red" aria-hidden="true">CRIT</span>
+              </div>
+              <div id="kpi-critical" class="kpi-value muted">Unavailable</div>
+              <div id="kpi-critical-sub" class="kpi-sub">Requires shortages.csv</div>
+            </article>
+          </div>
+
+          <!-- Supplier Capacity Overview + Dataset Readiness -->
+          <div class="two-col-grid">
+            <article class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Supplier Capacity Overview</h3>
+                  <p>Booked demand vs available supplier capacity</p>
+                </div>
+                <span id="dash-cap-badge" class="badge badge-neutral">Unavailable</span>
+              </div>
+              <div id="dash-capacity-overview" class="panel-body">
+                <div class="empty-state">
+                  Load <code>supplier_capacity_analysis.csv</code>, <code>capacity_check.csv</code>, or <code>supplier_capacity.csv</code> to view capacity utilisation.
+                </div>
+              </div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Loaded Dataset Coverage</h3>
+                  <p>CSV sources currently active in the workspace</p>
+                </div>
+                <button class="btn btn-sm btn-outline" id="dash-manage-csv-btn" type="button">Manage CSVs</button>
+              </div>
+              <div id="dataset-coverage-list" class="panel-body dataset-pills"></div>
+            </article>
+          </div>
+
+          <!-- Charts Row -->
+          <div class="charts-grid">
+            <article class="panel chart-panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Demand vs Inventory</h3>
+                  <p>Forecast demand units compared against on-hand stock</p>
+                </div>
+                <div class="btn-group" role="group" aria-label="Demand vs Inventory grouping">
+                  <button id="chart-dvi-loc-btn" class="btn btn-sm btn-active" type="button">By Location</button>
+                  <button id="chart-dvi-cat-btn" class="btn btn-sm btn-outline" type="button">By Category</button>
+                </div>
+              </div>
+              <div class="panel-body chart-container">
+                <div id="chart-demand-inventory" class="chart-host"></div>
+              </div>
+            </article>
+
+            <article class="panel chart-panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Shortage Distribution</h3>
+                  <p>Breakdown by severity priority and impacted locations</p>
+                </div>
+                <div class="btn-group" role="group" aria-label="Shortage chart metric">
+                  <button id="chart-sh-count-btn" class="btn btn-sm btn-active" type="button">By Priority</button>
+                  <button id="chart-sh-loc-btn" class="btn btn-sm btn-outline" type="button">Top Locations</button>
+                </div>
+              </div>
+              <div class="panel-body chart-container">
+                <div id="chart-shortage-dist" class="chart-host"></div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <!-- ==================== B. DEMAND & INVENTORY ==================== -->
+        <section id="page-demand-inventory" class="page-section" aria-labelledby="di-title">
+          <div class="section-header">
+            <div>
+              <h2 id="di-title">Demand &amp; Inventory Planning</h2>
+              <p>Inspect SKU demand forecasts, warehouse stock availability, and projected balances.</p>
+            </div>
+          </div>
+
+          <div id="di-unavailable" class="panel hidden">
+            <div class="panel-body empty-state">
+              Neither <code>forecast_demand.csv</code> nor <code>inventory.csv</code> is loaded. Import your CSV files to view demand and inventory records.
+            </div>
+          </div>
+
+          <div id="di-content">
+            <div class="summary-strip" id="di-summary-strip"></div>
+
+            <div class="panel">
+              <div class="filter-bar">
+                <div class="filter-group grow">
+                  <label for="di-search">Search SKU or Product</label>
+                  <input id="di-search" type="search" placeholder="e.g. SKU-000001, Product 1, Grocery..." />
+                </div>
+                <div class="filter-group">
+                  <label for="di-sku-filter">SKU</label>
+                  <select id="di-sku-filter">
+                    <option value="ALL">All SKUs</option>
+                  </select>
+                </div>
+                <div class="filter-group">
+                  <label for="di-location-filter">Location</label>
+                  <select id="di-location-filter">
+                    <option value="ALL">All Locations</option>
+                  </select>
+                </div>
+                <div class="filter-group">
+                  <label for="di-view-mode">View Mode</label>
+                  <select id="di-view-mode">
+                    <option value="demand">Forecast Demand Lines</option>
+                    <option value="summary">SKU &times; Location Balance</option>
+                    <option value="inventory">Inventory Master</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead id="di-thead"></thead>
+                  <tbody id="di-tbody"></tbody>
+                </table>
+              </div>
+              <div id="di-pagination" class="pagination-bar"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== C. SHORTAGE ANALYSIS ==================== -->
+        <section id="page-shortages" class="page-section" aria-labelledby="sh-title">
+          <div class="section-header">
+            <div>
+              <h2 id="sh-title">Shortage Analysis</h2>
+              <p>Identify unmet demand by week, severity priority, and root cause.</p>
+            </div>
+          </div>
+
+          <div id="sh-unavailable" class="panel hidden">
+            <div class="panel-body empty-state">
+              No shortage dataset loaded. Import <code>shortages.csv</code> or <code>shortage_explanations.csv</code> to analyse shortages.
+            </div>
+          </div>
+
+          <div id="sh-content">
+            <div class="summary-strip" id="sh-summary-strip"></div>
+
+            <div class="panel">
+              <div class="filter-bar">
+                <div class="filter-group grow">
+                  <label for="sh-search">Search Shortage ID, SKU, or Cause</label>
+                  <input id="sh-search" type="search" placeholder="e.g. SHORT-2026, SKU-000001, lead time..." />
+                </div>
+                <div class="filter-group">
+                  <label for="sh-priority-filter">Priority</label>
+                  <select id="sh-priority-filter">
+                    <option value="ALL">All Priorities</option>
+                    <option value="CRITICAL">CRITICAL</option>
+                    <option value="HIGH">HIGH</option>
+                    <option value="MEDIUM">MEDIUM</option>
+                  </select>
+                </div>
+                <div class="filter-group">
+                  <label for="sh-location-filter">Location</label>
+                  <select id="sh-location-filter">
+                    <option value="ALL">All Locations</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Shortage ID</th>
+                      <th>SKU</th>
+                      <th>Location</th>
+                      <th>Week</th>
+                      <th class="num">Demand</th>
+                      <th class="num">Projected Bal.</th>
+                      <th class="num">Shortage Qty</th>
+                      <th>Severity</th>
+                      <th>Cause</th>
+                    </tr>
+                  </thead>
+                  <tbody id="sh-tbody"></tbody>
+                </table>
+              </div>
+              <div id="sh-pagination" class="pagination-bar"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== D. SUPPLIER MANAGEMENT ==================== -->
+        <section id="page-suppliers" class="page-section" aria-labelledby="sup-title">
+          <div class="section-header">
+            <div>
+              <h2 id="sup-title">Supplier Management</h2>
+              <p>Monitor supplier reliability, lead times across warehouses, and weekly capacity utilisation.</p>
+            </div>
+          </div>
+
+          <div id="sup-unavailable" class="panel hidden">
+            <div class="panel-body empty-state">
+              No supplier dataset loaded. Import <code>supplier.csv</code>, <code>lead_times.csv</code>, or <code>supplier_capacity_analysis.csv</code>.
+            </div>
+          </div>
+
+          <div id="sup-content">
+            <div class="summary-strip" id="sup-summary-strip"></div>
+
+            <div class="panel">
+              <div class="panel-header">
+                <div>
+                  <h3>Supplier Capacity Utilisation</h3>
+                  <p>Booked PO units vs allocated supplier capacity (in active booking weeks)</p>
+                </div>
+              </div>
+              <div class="panel-body chart-container">
+                <div id="chart-supplier-capacity" class="chart-host"></div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="filter-bar">
+                <div class="filter-group grow">
+                  <label for="sup-search">Search Supplier</label>
+                  <input id="sup-search" type="search" placeholder="e.g. SUP-0001, Supplier 1..." />
+                </div>
+                <div class="filter-group">
+                  <label for="sup-constraint-filter">Constraint Status</label>
+                  <select id="sup-constraint-filter">
+                    <option value="ALL">All Suppliers</option>
+                    <option value="CONSTRAINED">Constrained / High Utilisation (&ge; 40% or Exceeded)</option>
+                    <option value="EXCEEDED">Capacity Exceeded Only</option>
+                    <option value="WITHIN">Within Capacity</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Supplier ID</th>
+                      <th>Supplier Name</th>
+                      <th class="num">Reliability</th>
+                      <th class="num">Avg / Range Lead Time</th>
+                      <th class="num">Booked Units</th>
+                      <th class="num">Capacity (Active Wks)</th>
+                      <th class="num">Utilisation</th>
+                      <th>Capacity Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="sup-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Lead Time & Weekly Capacity Check Detail -->
+            <div class="two-col-grid">
+              <article class="panel">
+                <div class="panel-header">
+                  <div>
+                    <h3>Supplier Lead Times by Location</h3>
+                    <p>From <code>lead_times.csv</code></p>
+                  </div>
+                  <select id="lt-supplier-filter" aria-label="Filter lead times by supplier">
+                    <option value="ALL">All Suppliers</option>
+                  </select>
+                </div>
+                <div class="table-wrap compact-table">
+                  <table class="data-table">
+                    <thead>
+                      <tr>
+                        <th>Supplier</th>
+                        <th>Location</th>
+                        <th class="num">Lead Time (Weeks)</th>
+                      </tr>
+                    </thead>
+                    <tbody id="lt-tbody"></tbody>
+                  </table>
+                </div>
+              </article>
+
+              <article class="panel">
+                <div class="panel-header">
+                  <div>
+                    <h3>Weekly Capacity Bookings</h3>
+                    <p>From <code>supplier_capacity_analysis.csv</code> / <code>capacity_check.csv</code></p>
+                  </div>
+                  <select id="cap-supplier-filter" aria-label="Filter capacity checks by supplier">
+                    <option value="ALL">All Suppliers</option>
+                  </select>
+                </div>
+                <div class="table-wrap compact-table">
+                  <table class="data-table">
+                    <thead>
+                      <tr>
+                        <th>Supplier</th>
+                        <th class="num">Week</th>
+                        <th class="num">Booked</th>
+                        <th class="num">Capacity</th>
+                        <th class="num">Excess</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody id="cap-tbody"></tbody>
+                  </table>
+                </div>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== E. MITIGATION RECOMMENDATIONS ==================== -->
+        <section id="page-mitigations" class="page-section" aria-labelledby="mit-title">
+          <div class="section-header">
+            <div>
+              <h2 id="mit-title">Mitigation Recommendations</h2>
+              <p>Policy-compliant mitigation options screened against supplier capacity, production availability, and edge-case rules.</p>
+            </div>
+          </div>
+
+          <div id="mit-unavailable" class="panel hidden">
+            <div class="panel-body empty-state">
+              No mitigation dataset loaded. Import <code>mitigation_recommendations.csv</code>, <code>mitigation_feasibility.csv</code>, or <code>updated_mitigation_feasibility.csv</code>.
+            </div>
+          </div>
+
+          <div id="mit-content">
+            <div class="alert-banner alert-info" id="mit-policy-note">
+              <div>
+                <strong>Policy &amp; Capacity Guardrail Active:</strong> Options that violate supplier capacity limits,
+                production availability, or planning policies (unapproved substitutes, duplicate POs, missing lead times) are automatically flagged and excluded from recommended actions.
+              </div>
+            </div>
+
+            <div class="summary-strip" id="mit-summary-strip"></div>
+
+            <div class="panel">
+              <div class="filter-bar">
+                <div class="filter-group grow">
+                  <label for="mit-search">Search Shortage, SKU, PO, or Action</label>
+                  <input id="mit-search" type="search" placeholder="e.g. SHORT-2026-000033, PO-2026, Expedite..." />
+                </div>
+                <div class="filter-group">
+                  <label for="mit-option-filter">Mitigation Option</label>
+                  <select id="mit-option-filter">
+                    <option value="ALL">All Options</option>
+                  </select>
+                </div>
+                <div class="filter-group">
+                  <label for="mit-policy-filter">Policy &amp; Feasibility</label>
+                  <select id="mit-policy-filter">
+                    <option value="COMPLIANT">Compliant Options Only (Default)</option>
+                    <option value="ACTIONABLE">Immediately Actionable / Covered</option>
+                    <option value="ALL">Show All (Including Flagged/Blocked)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="table-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Shortage &amp; Context</th>
+                      <th>Mitigation Option &amp; Explanation</th>
+                      <th>Reference PO / Supplier</th>
+                      <th>Service Impact</th>
+                      <th>Estimated Cost</th>
+                      <th>Policy &amp; Capacity Gate</th>
+                    </tr>
+                  </thead>
+                  <tbody id="mit-tbody"></tbody>
+                </table>
+              </div>
+              <div id="mit-pagination" class="pagination-bar"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== F. DATA & VALIDATION ==================== -->
+        <section id="page-validation" class="page-section" aria-labelledby="val-title">
+          <div class="section-header">
+            <div>
+              <h2 id="val-title">Data Quality, Edge Cases &amp; Ground Truth</h2>
+              <p>Audit results from validation reports, controlled edge-case checks, and isolated ground-truth labels.</p>
+            </div>
+          </div>
+
+          <!-- Final Validation Report -->
+          <article class="panel">
+            <div class="panel-header">
+              <div>
+                <h3>Final Validation Report</h3>
+                <p>Source: <code>final_validation_report.csv</code></p>
+              </div>
+              <span id="val-report-badge" class="badge badge-neutral">Unavailable</span>
+            </div>
+            <div id="val-report-body" class="panel-body"></div>
+          </article>
+
+          <!-- 5 Required Edge Cases -->
+          <article class="panel">
+            <div class="panel-header">
+              <div>
+                <h3>Controlled Edge Case Detection (5 Required Scenarios)</h3>
+                <p>Sources: <code>edge_case_detection_results.csv</code> &amp; <code>edge_case_test_results.csv</code></p>
+              </div>
+              <span id="edge-case-badge" class="badge badge-neutral">Unavailable</span>
+            </div>
+            <div id="edge-case-body" class="panel-body"></div>
+          </article>
+
+          <!-- Ground Truth Isolated Section -->
+          <article class="panel panel-isolated">
+            <div class="panel-header">
+              <div>
+                <h3>Ground-Truth Evaluation Labels (Isolated from Planning Inputs)</h3>
+                <p>Source: <code>ground_truth.csv</code> — Stored and displayed separately from operational planning tables to prevent evaluation leakage.</p>
+              </div>
+              <span id="gt-badge" class="badge badge-neutral">Unavailable</span>
+            </div>
+            <div id="gt-body" class="panel-body"></div>
+          </article>
+
+          <!-- Detailed Table Validation Summary (optional) -->
+          <article class="panel">
+            <div class="panel-header">
+              <div>
+                <h3>Table-Level Data Quality Summary</h3>
+                <p>Source: <code>validation_summary.csv</code></p>
+              </div>
+              <span id="val-summary-badge" class="badge badge-neutral">Unavailable</span>
+            </div>
+            <div id="val-summary-body" class="panel-body"></div>
+          </article>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- CSV Import Modal -->
+  <div id="import-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="import-modal-title">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div>
+          <h2 id="import-modal-title">Import Planova CSV Datasets</h2>
+          <p>Select your <code>Planova/data</code> folder or upload individual CSV files. Existing project files are never modified.</p>
+        </div>
+        <button id="close-import-btn" class="icon-btn" type="button" aria-label="Close modal">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div id="drop-zone" class="drop-zone">
+          <p class="drop-title">Drag &amp; drop CSV files here</p>
+          <p class="drop-sub">or choose files / folder from your computer</p>
+          <div class="drop-actions">
+            <label class="btn btn-primary file-label">
+              Select <code>data/</code> Folder
+              <input id="modal-folder-input" type="file" webkitdirectory directory multiple hidden />
+            </label>
+            <label class="btn btn-secondary file-label">
+              Choose CSV Files
+              <input id="modal-files-input" type="file" accept=".csv" multiple hidden />
+            </label>
+          </div>
+        </div>
+
+        <div class="import-status-grid">
+          <div class="import-status-header">
+            <h3>Recognised Planova Datasets</h3>
+            <button id="modal-demo-btn" class="btn btn-sm btn-outline" type="button">Load Demo Mode</button>
+          </div>
+          <div id="modal-dataset-checklist" class="dataset-checklist"></div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <span id="import-summary-text" class="modal-note">0 datasets loaded</span>
+        <button id="done-import-btn" class="btn btn-primary" type="button">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <script src="csvParser.js"></script>
+  <script src="charts.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

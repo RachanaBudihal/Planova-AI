@@ -357,6 +357,13 @@ code {
   color: var(--navy-800);
 }
 
+/* Full-scale project data pill — distinct emerald green */
+.status-full {
+  background: #d1fae5;
+  color: #065f46;
+  border: 1.5px solid #6ee7b7;
+}
+
 .status-demo {
   background: var(--amber-100);
   color: var(--amber-700);

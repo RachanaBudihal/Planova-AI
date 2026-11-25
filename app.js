@@ -36,7 +36,9 @@
   // ---------------- Application State ----------------
   const state = {
     datasets: {},               // Map of datasetKey -> { fileName, headers, rows }
-    dataSourceMode: "sample",   // "sample" | "custom" | "empty"
+    dataSourceMode: "sample",   // "sample" | "full" | "custom" | "empty"
+    fullDataAgg: {},            // Pre-computed aggregates from fullData.js __agg__ metadata
+    fullDataMeta: {},           // Per-file metadata (full vs sampled) from fullData.js __meta__
     sampleBannerDismissed: false,
     activePage: "dashboard",
     charts: {
@@ -232,10 +234,26 @@
    * This ensures instant dashboard rendering even when opened directly via file://.
    */
   function loadBundledSampleCSVs() {
-    const bundle = window.PLANOVA_SAMPLE_CSVS || {};
+    // Prefer full-scale project data (window.PLANOVA_FULL_CSVS from fullData.js),
+    // fall back to built-in sample data (window.PLANOVA_SAMPLE_CSVS from sampleData.js).
+    const isFullData = Boolean(window.PLANOVA_FULL_CSVS && Object.keys(window.PLANOVA_FULL_CSVS).length > 0);
+    const bundle = isFullData ? window.PLANOVA_FULL_CSVS : (window.PLANOVA_SAMPLE_CSVS || {});
     const parsedDatasets = {};
 
+    // Extract and store aggregate statistics for large CSVs (pre-computed in fullData.js)
+    // These are stored under special __agg__ key as a JSON string.
+    state.fullDataAgg = {};
+    if (bundle.__agg__) {
+      try { state.fullDataAgg = JSON.parse(bundle.__agg__); } catch (_e) {}
+    }
+    state.fullDataMeta = {};
+    if (bundle.__meta__) {
+      try { state.fullDataMeta = JSON.parse(bundle.__meta__); } catch (_e) {}
+    }
+
     for (const [fileName, rawText] of Object.entries(bundle)) {
+      // Skip internal metadata keys
+      if (fileName.startsWith("__") && fileName.endsWith("__")) continue;
       const key = identifyDatasetKey(fileName);
       if (!key) continue;
       try {
@@ -252,7 +270,11 @@
     }
 
     state.datasets = parsedDatasets;
-    state.dataSourceMode = Object.keys(parsedDatasets).length > 0 ? "sample" : "empty";
+    if (Object.keys(parsedDatasets).length === 0) {
+      state.dataSourceMode = "empty";
+    } else {
+      state.dataSourceMode = isFullData ? "full" : "sample";
+    }
   }
 
   /**
@@ -290,7 +312,7 @@
     );
 
     // Only apply if user hasn't already switched to custom CSVs or cleared data
-    if (Object.keys(fetched).length > 0 && state.dataSourceMode === "sample") {
+    if (Object.keys(fetched).length > 0 && (state.dataSourceMode === "sample" || state.dataSourceMode === "full")) {
       state.datasets = fetched;
       populateFilterDropdowns();
       renderAll();
@@ -315,7 +337,12 @@
     updateImportModalChecklist();
     tryRefreshSampleFromHttp();
 
-    showToast("Restored original Planova sample CSV datasets.", "success");
+    showToast(
+      window.PLANOVA_FULL_CSVS
+        ? "Restored full-scale Planova project datasets."
+        : "Restored original Planova sample CSV datasets.",
+      "success"
+    );
   }
 
   function clearAllData() {
@@ -512,6 +539,15 @@
       sampleBanner.classList.add("hidden");
       customBanner.classList.add("hidden");
       emptyBanner.classList.remove("hidden");
+    } else if (state.dataSourceMode === "full") {
+      // Full-scale project data loaded from fullData.js
+      pill.textContent = `Full Project Data (${count} CSVs)`;
+      pill.className = "status-pill status-full";
+      sideStatus.textContent = "Full Project Data Active";
+      sideSub.textContent = `${count} full-scale CSVs loaded`;
+      sampleBanner.classList.add("hidden");
+      customBanner.classList.add("hidden");
+      emptyBanner.classList.add("hidden");
     } else if (state.dataSourceMode === "sample") {
       pill.textContent = `Sample Data (${count} CSVs)`;
       pill.className = "status-pill status-ready";
@@ -547,6 +583,8 @@
     $("dash-last-updated").textContent =
       count === 0
         ? "No datasets loaded"
+        : state.dataSourceMode === "full"
+        ? `Source: Full-scale Planova project datasets (${count} CSV files — 3,000 SKUs / 50 Locations / 500 Suppliers)`
         : state.dataSourceMode === "sample"
         ? `Source: Built-in Planova sample datasets (${count} CSV files)`
         : `Source: ${count} user-uploaded CSV file(s)`;
@@ -593,10 +631,17 @@
 
     if (hasDataset("forecast_demand")) {
       const demRows = getRows("forecast_demand");
-      const totalDem = demRows.reduce((s, r) => s + (toNumber(r.demand_units, 0) || 0), 0);
+      // For full data mode, use pre-aggregated totals from fullData.js __agg__ metadata
+      // so we don't have to sum 500,000 rows in the browser each render.
+      const totalDem = (state.dataSourceMode === "full" && state.fullDataAgg.forecast_total_demand)
+        ? state.fullDataAgg.forecast_total_demand
+        : demRows.reduce((s, r) => s + (toNumber(r.demand_units, 0) || 0), 0);
+      const totalRows = (state.dataSourceMode === "full" && state.fullDataAgg.forecast_total_rows)
+        ? state.fullDataAgg.forecast_total_rows
+        : demRows.length;
       $("kpi-demand").textContent = fmtInt(totalDem);
       $("kpi-demand").classList.remove("muted");
-      $("kpi-demand-sub").textContent = `Across ${fmtInt(demRows.length)} demand lines`;
+      $("kpi-demand-sub").textContent = `Across ${fmtInt(totalRows)} demand lines`;
     } else {
       $("kpi-demand").textContent = "Unavailable";
       $("kpi-demand").classList.add("muted");
@@ -1841,7 +1886,9 @@
     const entries = Object.entries(DATASET_CATALOG);
     const loadedCount = Object.keys(state.datasets).length;
     const modeLabel =
-      state.dataSourceMode === "sample"
+      state.dataSourceMode === "full"
+        ? "Full Project Data"
+        : state.dataSourceMode === "sample"
         ? "Sample Data"
         : state.dataSourceMode === "custom"
         ? "Custom Upload"

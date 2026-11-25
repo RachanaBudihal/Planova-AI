@@ -381,6 +381,34 @@ code {
   color: #78350f;
 }
 
+.alert-sample {
+  background: linear-gradient(90deg, #eff6ff 0%, #e0f2fe 100%);
+  border: 1px solid #93c5fd;
+  color: var(--navy-900);
+}
+
+.banner-copy {
+  flex: 1;
+}
+
+.banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.modal-option-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  font-size: 0.82rem;
+  color: var(--navy-900);
+  cursor: pointer;
+}
+
 .alert-info {
   margin: 0 0 16px;
   background: var(--blue-50);

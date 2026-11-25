@@ -2,8 +2,9 @@
    app.js — PLANOVA Interactive Prototype Application Logic
    ==========================================================================
    Manages:
-   1. Application state (imported CSV datasets, active page, filters, pagination)
-   2. File / Folder / Drag-and-Drop CSV import + HTTP auto-load + Demo Mode + Reset
+   1. Automatic loading of the project's built-in sample CSV datasets on startup
+      (via ../data/*.csv over HTTP or verbatim snapshot in sampleData.js for file://)
+   2. Optional custom CSV file / folder upload + Reset to Sample Data
    3. Data joins & KPI calculations (strictly from loaded data; never fabricated)
    4. Rendering for all 6 sections:
       - Dashboard
@@ -34,12 +35,13 @@
 
   // ---------------- Application State ----------------
   const state = {
-    datasets: {},       // Map of datasetKey -> { fileName, headers, rows }
-    isDemoMode: false,
+    datasets: {},               // Map of datasetKey -> { fileName, headers, rows }
+    dataSourceMode: "sample",   // "sample" | "custom" | "empty"
+    sampleBannerDismissed: false,
     activePage: "dashboard",
     charts: {
-      dviMode: "location",     // "location" | "category"
-      shortageMode: "priority" // "priority" | "location"
+      dviMode: "location",      // "location" | "category"
+      shortageMode: "priority", // "priority" | "location"
     },
     pagination: {
       diPage: 1,
@@ -107,20 +109,17 @@
       supMap.set(r.supplier_id, r);
     }
 
-    // Inventory lookup by "sku_id|location_id"
     const invMap = new Map();
     for (const r of getRows("inventory")) {
       const k = `${r.sku_id}|${r.location_id}`;
       invMap.set(k, (invMap.get(k) || 0) + (toNumber(r.stock, 0) || 0));
     }
 
-    // Shortage explanation lookup by "sku_id|location_id|week"
     const expMap = new Map();
     for (const r of getRows("shortage_explanations")) {
       expMap.set(`${r.sku_id}|${r.location_id}|${r.week}`, r);
     }
 
-    // Shortage ID lookup from mitigation tables by "sku_id|location_id|week"
     const shortageIdMap = new Map();
     const mitSource =
       getRows("updated_mitigation_feasibility").length > 0
@@ -136,7 +135,6 @@
       }
     }
 
-    // Supplier capacity lookup by "supplier_id|week"
     const supCapWeekMap = new Map();
     for (const r of getRows("supplier_capacity_analysis")) {
       supCapWeekMap.set(`${r.supplier_id}|${r.week}`, r);
@@ -159,11 +157,6 @@
     };
   }
 
-  /**
-   * Returns unified shortage records using shortages.csv as primary source
-   * (or falling back to shortage_explanations.csv / integrated_shortages.csv),
-   * enriched with shortage_id and shortage_reason when available.
-   */
   function getUnifiedShortages(lookups) {
     let sourceName = null;
     let baseRows = [];
@@ -232,26 +225,127 @@
     $("sidebar-backdrop").classList.remove("open");
   }
 
-  // ---------------- CSV Import & File Handling ----------------
+  // ---------------- Sample Data Loader & Reset ----------------
+  /**
+   * Parses the bundled verbatim Planova sample CSV files (from sampleData.js)
+   * using the exact same CSV parser used for user uploads.
+   * This ensures instant dashboard rendering even when opened directly via file://.
+   */
+  function loadBundledSampleCSVs() {
+    const bundle = window.PLANOVA_SAMPLE_CSVS || {};
+    const parsedDatasets = {};
+
+    for (const [fileName, rawText] of Object.entries(bundle)) {
+      const key = identifyDatasetKey(fileName);
+      if (!key) continue;
+      try {
+        const parsed = parseCSVText(rawText, fileName);
+        validateDatasetSchema(key, parsed.headers, fileName);
+        parsedDatasets[key] = {
+          fileName,
+          headers: parsed.headers,
+          rows: parsed.rows,
+        };
+      } catch (_err) {
+        // Ignore unrecognised or optional files
+      }
+    }
+
+    state.datasets = parsedDatasets;
+    state.dataSourceMode = Object.keys(parsedDatasets).length > 0 ? "sample" : "empty";
+  }
+
+  /**
+   * When served over HTTP(S) from the parent Planova/ directory, refreshes the
+   * sample datasets directly from ../data/*.csv so live edits to disk CSVs are picked up.
+   */
+  async function tryRefreshSampleFromHttp() {
+    if (window.location.protocol === "file:") {
+      return;
+    }
+
+    const autoKeys = Object.keys(DATASET_CATALOG).filter(
+      (k) => k !== "integrated_planning"
+    );
+
+    const fetched = {};
+    await Promise.all(
+      autoKeys.map(async (key) => {
+        const fileName = DATASET_CATALOG[key].label;
+        try {
+          const resp = await fetch(`../data/${fileName}`, { cache: "no-store" });
+          if (!resp.ok) return;
+          const text = await resp.text();
+          const parsed = parseCSVText(text, fileName);
+          validateDatasetSchema(key, parsed.headers, fileName);
+          fetched[key] = {
+            fileName,
+            headers: parsed.headers,
+            rows: parsed.rows,
+          };
+        } catch (_err) {
+          // Silently ignore if ../data is not served at this mount point
+        }
+      })
+    );
+
+    // Only apply if user hasn't already switched to custom CSVs or cleared data
+    if (Object.keys(fetched).length > 0 && state.dataSourceMode === "sample") {
+      state.datasets = fetched;
+      populateFilterDropdowns();
+      renderAll();
+      updateImportModalChecklist();
+    }
+  }
+
+  function resetToSampleData() {
+    $("di-search").value = "";
+    $("sh-search").value = "";
+    $("sup-search").value = "";
+    $("mit-search").value = "";
+
+    state.pagination.diPage = 1;
+    state.pagination.shPage = 1;
+    state.pagination.mitPage = 1;
+    state.sampleBannerDismissed = false;
+
+    loadBundledSampleCSVs();
+    populateFilterDropdowns();
+    renderAll();
+    updateImportModalChecklist();
+    tryRefreshSampleFromHttp();
+
+    showToast("Restored original Planova sample CSV datasets.", "success");
+  }
+
+  function clearAllData() {
+    state.datasets = {};
+    state.dataSourceMode = "empty";
+    state.pagination.diPage = 1;
+    state.pagination.shPage = 1;
+    state.pagination.mitPage = 1;
+
+    $("di-search").value = "";
+    $("sh-search").value = "";
+    $("sup-search").value = "";
+    $("mit-search").value = "";
+
+    populateFilterDropdowns();
+    renderAll();
+    updateImportModalChecklist();
+    showToast("Cleared all loaded datasets.", "info");
+  }
+
+  // ---------------- Optional Custom CSV Upload ----------------
   async function handleFileList(fileList) {
     const files = Array.from(fileList || []).filter((f) =>
       f.name.toLowerCase().endsWith(".csv")
     );
 
     if (files.length === 0) {
-      showToast("No .csv files were found in the selection.", "warn");
+      showToast("No .csv files were found in your selection.", "warn");
       return;
     }
-
-    // If user imports real files while in demo mode, clear demo mode first
-    if (state.isDemoMode) {
-      state.datasets = {};
-      state.isDemoMode = false;
-    }
-
-    let loadedCount = 0;
-    const errors = [];
-    const ignored = [];
 
     const results = await Promise.all(
       files.map(async (file) => {
@@ -281,18 +375,26 @@
       })
     );
 
-    for (const res of results) {
-      if (res.status === "ok") {
-        state.datasets[res.key] = res.data;
-        loadedCount += 1;
-      } else if (res.status === "error") {
-        errors.push(res.error);
-      } else if (res.status === "ignored") {
-        ignored.push(res.fileName);
+    const validResults = results.filter((r) => r.status === "ok");
+    const errors = results.filter((r) => r.status === "error").map((r) => r.error);
+    const ignored = results.filter((r) => r.status === "ignored").map((r) => r.fileName);
+
+    if (validResults.length > 0) {
+      const replaceSample =
+        $("replace-sample-checkbox") && $("replace-sample-checkbox").checked;
+
+      // When transitioning from built-in sample data to user CSVs with replace enabled,
+      // clear the sample datasets so missing tables display honestly as Unavailable.
+      if (state.dataSourceMode === "sample" && replaceSample) {
+        state.datasets = {};
       }
+
+      for (const res of validResults) {
+        state.datasets[res.key] = res.data;
+      }
+      state.dataSourceMode = "custom";
     }
 
-    // Reset page numbers on new import
     state.pagination.diPage = 1;
     state.pagination.shPage = 1;
     state.pagination.mitPage = 1;
@@ -301,13 +403,16 @@
     renderAll();
     updateImportModalChecklist();
 
-    if (loadedCount > 0) {
-      showToast(`Imported ${loadedCount} Planova CSV dataset(s).`, "success");
+    if (validResults.length > 0) {
+      showToast(
+        `Loaded ${validResults.length} custom CSV dataset(s). Click "Reset to Sample Data" anytime to restore defaults.`,
+        "success"
+      );
     }
     if (errors.length > 0) {
       errors.forEach((msg) => showToast(msg, "error"));
     }
-    if (loadedCount === 0 && ignored.length > 0 && errors.length === 0) {
+    if (validResults.length === 0 && ignored.length > 0 && errors.length === 0) {
       showToast(
         `Ignored unrecognised CSV file(s): ${ignored.slice(0, 3).join(", ")}.`,
         "warn"
@@ -315,202 +420,10 @@
     }
   }
 
-  /**
-   * Attempts to auto-load CSVs from ../data/ ONLY when running over HTTP(S).
-   * When opened via file://, browsers block fetch() across local files, so we
-   * skip silently and let the user use the 1-click "Select data/ Folder" button.
-   */
-  async function tryAutoLoadFromHttp() {
-    if (window.location.protocol === "file:") {
-      return;
-    }
-
-    // Skip huge planning tables (>2MB) on automatic startup; users can upload them if desired
-    const autoKeys = Object.keys(DATASET_CATALOG).filter(
-      (k) => k !== "integrated_planning"
-    );
-
-    let loaded = 0;
-    await Promise.all(
-      autoKeys.map(async (key) => {
-        const fileName = DATASET_CATALOG[key].label;
-        try {
-          const resp = await fetch(`../data/${fileName}`, { cache: "no-store" });
-          if (!resp.ok) return;
-          const text = await resp.text();
-          const parsed = parseCSVText(text, fileName);
-          validateDatasetSchema(key, parsed.headers, fileName);
-          state.datasets[key] = {
-            fileName,
-            headers: parsed.headers,
-            rows: parsed.rows,
-          };
-          loaded += 1;
-        } catch (_err) {
-          // Silently ignore individual missing optional files
-        }
-      })
-    );
-
-    if (loaded > 0) {
-      populateFilterDropdowns();
-      renderAll();
-      updateImportModalChecklist();
-      showToast(`Auto-loaded ${loaded} CSV dataset(s) from ../data/.`, "success");
-    }
-  }
-
-  /**
-   * Loads a small, clearly labelled Demo Mode sample dataset only on explicit user click.
-   */
-  function loadDemoMode() {
-    state.isDemoMode = true;
-    state.datasets = {
-      sku: {
-        fileName: "demo_sku.csv",
-        headers: ["sku_id", "product_name", "unit_cost", "category"],
-        rows: [
-          { sku_id: "DEMO-SKU-01", product_name: "Demo Industrial Valve", unit_cost: "180", category: "Hardware" },
-          { sku_id: "DEMO-SKU-02", product_name: "Demo Sensor Module", unit_cost: "240", category: "Electronics" },
-          { sku_id: "DEMO-SKU-03", product_name: "Demo Packaging Crate", unit_cost: "45", category: "Packaging" },
-        ],
-      },
-      location: {
-        fileName: "demo_location.csv",
-        headers: ["location_id", "location_name"],
-        rows: [
-          { location_id: "DEMO-LOC-1", location_name: "Demo Hub North" },
-          { location_id: "DEMO-LOC-2", location_name: "Demo Hub South" },
-        ],
-      },
-      supplier: {
-        fileName: "demo_supplier.csv",
-        headers: ["supplier_id", "supplier_name", "reliability"],
-        rows: [
-          { supplier_id: "DEMO-SUP-1", supplier_name: "Demo Alpha Supply", reliability: "94" },
-          { supplier_id: "DEMO-SUP-2", supplier_name: "Demo Beta Manufacturing", reliability: "82" },
-        ],
-      },
-      forecast_demand: {
-        fileName: "demo_forecast_demand.csv",
-        headers: ["sku_id", "location_id", "week", "demand_units"],
-        rows: [
-          { sku_id: "DEMO-SKU-01", location_id: "DEMO-LOC-1", week: "4", demand_units: "320" },
-          { sku_id: "DEMO-SKU-02", location_id: "DEMO-LOC-1", week: "6", demand_units: "210" },
-          { sku_id: "DEMO-SKU-03", location_id: "DEMO-LOC-2", week: "5", demand_units: "140" },
-        ],
-      },
-      inventory: {
-        fileName: "demo_inventory.csv",
-        headers: ["sku_id", "location_id", "stock"],
-        rows: [
-          { sku_id: "DEMO-SKU-01", location_id: "DEMO-LOC-1", stock: "120" },
-          { sku_id: "DEMO-SKU-02", location_id: "DEMO-LOC-1", stock: "0" },
-          { sku_id: "DEMO-SKU-03", location_id: "DEMO-LOC-2", stock: "200" },
-        ],
-      },
-      lead_times: {
-        fileName: "demo_lead_times.csv",
-        headers: ["supplier_id", "location_id", "lead_time_weeks"],
-        rows: [
-          { supplier_id: "DEMO-SUP-1", location_id: "DEMO-LOC-1", lead_time_weeks: "2" },
-          { supplier_id: "DEMO-SUP-2", location_id: "DEMO-LOC-2", lead_time_weeks: "4" },
-        ],
-      },
-      supplier_capacity_analysis: {
-        fileName: "demo_supplier_capacity_analysis.csv",
-        headers: ["supplier_id", "week", "booked_units", "capacity_units", "excess_units", "capacity_status"],
-        rows: [
-          { supplier_id: "DEMO-SUP-1", week: "4", booked_units: "260", capacity_units: "400", excess_units: "0", capacity_status: "WITHIN CAPACITY" },
-          { supplier_id: "DEMO-SUP-2", week: "6", booked_units: "430", capacity_units: "400", excess_units: "30", capacity_status: "CAPACITY EXCEEDED" },
-        ],
-      },
-      shortages: {
-        fileName: "demo_shortages.csv",
-        headers: ["sku_id", "location_id", "week", "demand_units", "stock", "opening_balance", "projected_balance", "shortage_units", "priority"],
-        rows: [
-          { sku_id: "DEMO-SKU-01", location_id: "DEMO-LOC-1", week: "4", demand_units: "320", stock: "120", opening_balance: "120", projected_balance: "120", shortage_units: "200", priority: "CRITICAL" },
-          { sku_id: "DEMO-SKU-02", location_id: "DEMO-LOC-1", week: "6", demand_units: "210", stock: "0", opening_balance: "0", projected_balance: "0", shortage_units: "210", priority: "HIGH" },
-        ],
-      },
-      shortage_explanations: {
-        fileName: "demo_shortage_explanations.csv",
-        headers: ["sku_id", "location_id", "week", "demand_units", "shortage_units", "shortage_reason", "priority"],
-        rows: [
-          { sku_id: "DEMO-SKU-01", location_id: "DEMO-LOC-1", week: "4", demand_units: "320", shortage_units: "200", shortage_reason: "Demand exceeds available inventory and incoming supply", priority: "CRITICAL" },
-          { sku_id: "DEMO-SKU-02", location_id: "DEMO-LOC-1", week: "6", demand_units: "210", shortage_units: "210", shortage_reason: "Long supplier lead time may delay replenishment", priority: "HIGH" },
-        ],
-      },
-      updated_mitigation_feasibility: {
-        fileName: "demo_mitigation.csv",
-        headers: ["shortage_id", "sku_id", "location_id", "week", "shortage_units", "option", "reference_po", "supplier_id", "suggested_action", "planned_units", "uncovered_units", "production_status", "production_feasibility", "remaining_shortage"],
-        rows: [
-          { shortage_id: "DEMO-SHORT-01", sku_id: "DEMO-SKU-01", location_id: "DEMO-LOC-1", week: "4", shortage_units: "200", option: "Expedite existing purchase order", reference_po: "DEMO-PO-10", supplier_id: "DEMO-SUP-1", suggested_action: "Expedite PO with supplier DEMO-SUP-1", planned_units: "200", uncovered_units: "0", production_status: "CAPACITY AVAILABLE", production_feasibility: "CAPACITY AVAILABLE", remaining_shortage: "0" },
-          { shortage_id: "DEMO-SHORT-02", sku_id: "DEMO-SKU-02", location_id: "DEMO-LOC-1", week: "6", shortage_units: "210", option: "Expedite existing purchase order", reference_po: "DEMO-PO-11", supplier_id: "DEMO-SUP-2", suggested_action: "Expedite PO with over-capacity supplier DEMO-SUP-2", planned_units: "0", uncovered_units: "210", production_status: "CAPACITY EXCEEDED", production_feasibility: "CAPACITY EXCEEDED", remaining_shortage: "210" },
-        ],
-      },
-      final_validation_report: {
-        fileName: "demo_final_validation_report.csv",
-        headers: ["check", "status", "details"],
-        rows: [
-          { check: "Demo Master Data Check", status: "PASS", details: "Sample demo SKUs and locations valid" },
-        ],
-      },
-      edge_case_detection_results: {
-        fileName: "demo_edge_cases.csv",
-        headers: ["case_id", "issue_type", "source_record_id", "test_value", "detected", "expected_detection", "test_status"],
-        rows: [
-          { case_id: "EDGE-001", issue_type: "Inbound inventory counted twice", source_record_id: "DEMO-PO-01", test_value: "Duplicate PO identifier", detected: "True", expected_detection: "True", test_status: "PASS" },
-          { case_id: "EDGE-002", issue_type: "Substitute SKU not approved", source_record_id: "DEMO-SKU-01", test_value: "NOT_APPROVED", detected: "True", expected_detection: "True", test_status: "PASS" },
-          { case_id: "EDGE-003", issue_type: "Supplier capacity exceeded", source_record_id: "DEMO-SUP-2", test_value: "Booked quantity exceeds capacity", detected: "True", expected_detection: "True", test_status: "PASS" },
-          { case_id: "EDGE-004", issue_type: "Shortage calculated without lead time", source_record_id: "DEMO-PO-01", test_value: "Missing lead time", detected: "True", expected_detection: "True", test_status: "PASS" },
-          { case_id: "EDGE-005", issue_type: "Units of measure mismatch", source_record_id: "DEMO-SKU-01", test_value: "EA does not match CS", detected: "True", expected_detection: "True", test_status: "PASS" },
-        ],
-      },
-      ground_truth: {
-        fileName: "demo_ground_truth.csv",
-        headers: ["case_id", "issue_type", "source_record_id", "expected_detection"],
-        rows: [
-          { case_id: "EDGE-001", issue_type: "Inbound inventory counted twice", source_record_id: "DEMO-PO-01", expected_detection: "True" },
-          { case_id: "EDGE-002", issue_type: "Substitute SKU not approved", source_record_id: "DEMO-SKU-01", expected_detection: "True" },
-          { case_id: "EDGE-003", issue_type: "Supplier capacity exceeded", source_record_id: "DEMO-SUP-2", expected_detection: "True" },
-          { case_id: "EDGE-004", issue_type: "Shortage calculated without lead time", source_record_id: "DEMO-PO-01", expected_detection: "True" },
-          { case_id: "EDGE-005", issue_type: "Units of measure mismatch", source_record_id: "DEMO-SKU-01", expected_detection: "True" },
-        ],
-      },
-    };
-
-    populateFilterDropdowns();
-    renderAll();
-    updateImportModalChecklist();
-    closeImportModal();
-    showToast("Demo Mode loaded (small sample dataset).", "warn");
-  }
-
-  function resetAllData() {
-    state.datasets = {};
-    state.isDemoMode = false;
-    state.pagination.diPage = 1;
-    state.pagination.shPage = 1;
-    state.pagination.mitPage = 1;
-
-    // Reset filter controls
-    $("di-search").value = "";
-    $("sh-search").value = "";
-    $("sup-search").value = "";
-    $("mit-search").value = "";
-
-    populateFilterDropdowns();
-    renderAll();
-    updateImportModalChecklist();
-    showToast("All imported data has been cleared.", "info");
-  }
-
   // ---------------- Populate Filter Dropdowns ----------------
   function populateFilterDropdowns() {
     const lookups = buildLookups();
 
-    // Locations (combine from location.csv, forecast_demand, inventory, shortages)
     const locIds = new Set();
     getRows("location").forEach((r) => locIds.add(r.location_id));
     getRows("forecast_demand").forEach((r) => locIds.add(r.location_id));
@@ -532,7 +445,6 @@
     $("di-location-filter").innerHTML = locOptionsHtml;
     $("sh-location-filter").innerHTML = locOptionsHtml;
 
-    // SKUs
     const skuIds = new Set();
     getRows("sku").forEach((r) => skuIds.add(r.sku_id));
     getRows("forecast_demand").forEach((r) => skuIds.add(r.sku_id));
@@ -549,7 +461,6 @@
         })
         .join("");
 
-    // Suppliers for Lead Time & Weekly Capacity sub-tables
     const supIds = new Set();
     getRows("supplier").forEach((r) => supIds.add(r.supplier_id));
     getRows("lead_times").forEach((r) => supIds.add(r.supplier_id));
@@ -570,7 +481,6 @@
     $("lt-supplier-filter").innerHTML = supOptionsHtml;
     $("cap-supplier-filter").innerHTML = supOptionsHtml;
 
-    // Mitigation options dropdown
     const mitOpts = new Set();
     getRows("mitigation_recommendations").forEach((r) => mitOpts.add(r.option));
     getRows("mitigation_feasibility").forEach((r) => mitOpts.add(r.option));
@@ -590,33 +500,36 @@
     const pill = $("mode-pill");
     const sideStatus = $("sidebar-data-status");
     const sideSub = $("sidebar-file-count");
-    const demoBanner = $("demo-banner");
-    const onboarding = $("onboarding-banner");
+    const sampleBanner = $("sample-info-banner");
+    const customBanner = $("custom-info-banner");
+    const emptyBanner = $("empty-info-banner");
 
-    if (count === 0) {
+    if (state.dataSourceMode === "empty" || count === 0) {
       pill.textContent = "No Data Loaded";
       pill.className = "status-pill status-neutral";
       sideStatus.textContent = "No CSVs Loaded";
-      sideSub.textContent = "Import Planova/data CSVs";
-      demoBanner.classList.add("hidden");
-      onboarding.classList.remove("hidden");
-    } else if (state.isDemoMode) {
-      pill.textContent = "Demo Mode Active";
-      pill.className = "status-pill status-demo";
-      sideStatus.textContent = "Demo Sample";
-      sideSub.textContent = `${count} sample tables active`;
-      demoBanner.classList.remove("hidden");
-      onboarding.classList.add("hidden");
+      sideSub.textContent = "Upload CSVs or reset to sample";
+      sampleBanner.classList.add("hidden");
+      customBanner.classList.add("hidden");
+      emptyBanner.classList.remove("hidden");
+    } else if (state.dataSourceMode === "sample") {
+      pill.textContent = `Sample Data (${count} CSVs)`;
+      pill.className = "status-pill status-ready";
+      sideStatus.textContent = "Sample Data Active";
+      sideSub.textContent = `${count} project CSVs loaded`;
+      sampleBanner.classList.toggle("hidden", state.sampleBannerDismissed);
+      customBanner.classList.add("hidden");
+      emptyBanner.classList.add("hidden");
     } else {
-      pill.textContent = `${count} CSV Dataset${count === 1 ? "" : "s"} Loaded`;
-      pill.className = count >= 10 ? "status-pill status-ready" : "status-pill status-partial";
-      sideStatus.textContent = `${count} Dataset${count === 1 ? "" : "s"} Active`;
-      sideSub.textContent = "Calculated from uploaded CSVs";
-      demoBanner.classList.add("hidden");
-      onboarding.classList.add("hidden");
+      pill.textContent = `Custom Data (${count} CSV${count === 1 ? "" : "s"})`;
+      pill.className = "status-pill status-partial";
+      sideStatus.textContent = "Custom CSVs Active";
+      sideSub.textContent = `${count} uploaded dataset(s)`;
+      sampleBanner.classList.add("hidden");
+      customBanner.classList.remove("hidden");
+      emptyBanner.classList.add("hidden");
     }
 
-    // Critical shortage nav badge
     const shortages = getUnifiedShortages(lookups).rows;
     const critCount = shortages.filter((s) => s.priority === "CRITICAL").length;
     const badge = $("nav-shortage-badge");
@@ -633,12 +546,11 @@
     const count = Object.keys(state.datasets).length;
     $("dash-last-updated").textContent =
       count === 0
-        ? "Awaiting CSV import"
-        : state.isDemoMode
-        ? "Source: Clearly labelled Demo Mode sample"
-        : `Source: ${count} imported CSV file(s)`;
+        ? "No datasets loaded"
+        : state.dataSourceMode === "sample"
+        ? `Source: Built-in Planova sample datasets (${count} CSV files)`
+        : `Source: ${count} user-uploaded CSV file(s)`;
 
-    // 1. Total SKUs
     if (hasDataset("sku")) {
       const skus = getRows("sku");
       const cats = new Set(skus.map((s) => s.category).filter(Boolean));
@@ -651,7 +563,6 @@
       $("kpi-skus-sub").textContent = "Requires sku.csv";
     }
 
-    // 2. Total Locations
     if (hasDataset("location")) {
       const locs = getRows("location");
       $("kpi-locations").textContent = fmtInt(locs.length);
@@ -663,7 +574,6 @@
       $("kpi-locations-sub").textContent = "Requires location.csv";
     }
 
-    // 3. Total Suppliers
     if (hasDataset("supplier")) {
       const sups = getRows("supplier");
       const relVals = sups.map((s) => toNumber(s.reliability)).filter((n) => n !== null);
@@ -681,7 +591,6 @@
       $("kpi-suppliers-sub").textContent = "Requires supplier.csv";
     }
 
-    // 4. Total Forecast Demand
     if (hasDataset("forecast_demand")) {
       const demRows = getRows("forecast_demand");
       const totalDem = demRows.reduce((s, r) => s + (toNumber(r.demand_units, 0) || 0), 0);
@@ -694,7 +603,6 @@
       $("kpi-demand-sub").textContent = "Requires forecast_demand.csv";
     }
 
-    // 5 & 6. Shortage Units & Critical Shortages
     const { sourceName, rows: shortages } = getUnifiedShortages(lookups);
     if (sourceName) {
       const totalShUnits = shortages.reduce((s, r) => s + r.shortage_units, 0);
@@ -719,10 +627,8 @@
       $("kpi-critical-sub").textContent = "Requires shortages.csv";
     }
 
-    // Supplier Capacity Overview Widget
     renderDashboardCapacityOverview();
 
-    // Loaded Dataset Coverage Pills
     const keyFiles = [
       "sku",
       "location",
@@ -757,7 +663,6 @@
       })
       .join("");
 
-    // Charts
     renderDashboardCharts(lookups, shortages, sourceName);
   }
 
@@ -864,7 +769,6 @@
   }
 
   function renderDashboardCharts(lookups, shortages, shortageSource) {
-    // 1. Demand vs Inventory Chart
     const dviHost = $("chart-demand-inventory");
     if (!hasDataset("forecast_demand") || !hasDataset("inventory")) {
       dviHost.innerHTML = `
@@ -875,7 +779,7 @@
     } else if (state.charts.dviMode === "category" && !hasDataset("sku")) {
       dviHost.innerHTML = `
         <div class="empty-state">
-          Category grouping requires <code>sku.csv</code>. Switch to "By Location" or import <code>sku.csv</code>.
+          Category grouping requires <code>sku.csv</code>. Switch to "By Location" or upload <code>sku.csv</code>.
         </div>
       `;
     } else {
@@ -915,7 +819,6 @@
       renderGroupedBarChart(dviHost, items);
     }
 
-    // 2. Shortage Distribution Chart
     const shHost = $("chart-shortage-dist");
     if (!shortageSource || shortages.length === 0) {
       shHost.innerHTML = `
@@ -979,7 +882,6 @@
     const locFilter = $("di-location-filter").value;
     let viewMode = $("di-view-mode").value;
 
-    // Auto-switch if chosen view mode's primary dataset isn't loaded
     if (viewMode === "demand" && !hasDemand && hasInv) {
       viewMode = "inventory";
       $("di-view-mode").value = "inventory";
@@ -988,7 +890,6 @@
       $("di-view-mode").value = "demand";
     }
 
-    // Build shortage / projected balance lookup by "sku_id|location_id|week" and by "sku_id|location_id"
     const { rows: shortages } = getUnifiedShortages(lookups);
     const shByWeek = new Map();
     const shByPair = new Map();
@@ -1000,13 +901,11 @@
       );
     }
 
-    // Build integrated_planning lookup if user uploaded it
     const planByWeek = new Map();
     for (const p of getRows("integrated_planning")) {
       planByWeek.set(`${p.sku_id}|${p.location_id}|${p.week}`, p);
     }
 
-    // Aggregate demand by "sku_id|location_id"
     const demByPair = new Map();
     for (const d of getRows("forecast_demand")) {
       const k = `${d.sku_id}|${d.location_id}`;
@@ -1074,7 +973,6 @@
         };
       });
     } else {
-      // Combined SKU x Location summary
       const allPairs = new Set([...demByPair.keys(), ...lookups.invMap.keys()]);
       records = Array.from(allPairs).map((pairKey) => {
         const [sku_id, location_id] = pairKey.split("|");
@@ -1098,7 +996,6 @@
       });
     }
 
-    // Apply search & filters
     const filtered = records.filter((r) => {
       if (skuFilter !== "ALL" && r.sku_id !== skuFilter) return false;
       if (locFilter !== "ALL" && r.location_id !== locFilter) return false;
@@ -1109,7 +1006,6 @@
       return true;
     });
 
-    // Summary strip
     const sumDemand = filtered.reduce((s, r) => s + (r.demand_units || 0), 0);
     const sumStock = filtered.reduce((s, r) => s + (r.stock || 0), 0);
     $("di-summary-strip").innerHTML = `
@@ -1118,14 +1014,12 @@
       <div class="summary-chip"><span>Filtered Stock</span><strong>${hasInv ? fmtInt(sumStock) : "Unavailable"}</strong></div>
     `;
 
-    // Pagination
     const pageSize = state.pagination.pageSize;
     const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
     state.pagination.diPage = Math.min(state.pagination.diPage, totalPages);
     const start = (state.pagination.diPage - 1) * pageSize;
     const pageRows = filtered.slice(start, start + pageSize);
 
-    // Headers & Rows
     const thead = $("di-thead");
     const tbody = $("di-tbody");
 
@@ -1254,7 +1148,6 @@
       return true;
     });
 
-    // Sort CRITICAL first, then descending shortage_units
     const prioRank = { CRITICAL: 0, HIGH: 1, MEDIUM: 2 };
     filtered.sort((a, b) => {
       const ra = prioRank[a.priority] ?? 3;
@@ -1346,14 +1239,12 @@
     $("sup-unavailable").classList.add("hidden");
     $("sup-content").classList.remove("hidden");
 
-    // Gather all supplier IDs
     const supIds = new Set();
     getRows("supplier").forEach((r) => supIds.add(r.supplier_id));
     getRows("lead_times").forEach((r) => supIds.add(r.supplier_id));
     getRows("supplier_capacity_analysis").forEach((r) => supIds.add(r.supplier_id));
     getRows("capacity_check").forEach((r) => supIds.add(r.supplier_id));
 
-    // Lead times aggregated per supplier
     const ltAgg = new Map();
     for (const r of getRows("lead_times")) {
       const w = toNumber(r.lead_time_weeks);
@@ -1362,7 +1253,6 @@
       ltAgg.get(r.supplier_id).push(w);
     }
 
-    // Capacity analysis aggregated per supplier
     const capAgg = new Map();
     const analysisRows = hasCapAnalysis
       ? getRows("supplier_capacity_analysis")
@@ -1431,7 +1321,6 @@
         return true;
       });
 
-    // Summary strip
     const exceededCount = supplierRows.filter((r) => r.isExceeded).length;
     const peakUtilAll = supplierRows.reduce(
       (mx, r) => (r.cap ? Math.max(mx, r.cap.peakUtil) : mx),
@@ -1443,7 +1332,6 @@
       <div class="summary-chip"><span>Peak Weekly Utilisation</span><strong>${analysisRows.length ? fmtPct(peakUtilAll) : "Unavailable"}</strong></div>
     `;
 
-    // Supplier Capacity Chart
     const chartHost = $("chart-supplier-capacity");
     const chartRows = supplierRows
       .filter((r) => r.cap && r.cap.capacity > 0)
@@ -1463,7 +1351,6 @@
       chartHost.innerHTML = `<div class="empty-state">Load <code>supplier_capacity_analysis.csv</code> or <code>capacity_check.csv</code> to view supplier capacity utilisation.</div>`;
     }
 
-    // Supplier Master Table
     $("sup-tbody").innerHTML =
       supplierRows.length === 0
         ? `<tr><td colspan="8" class="muted" style="text-align:center;padding:24px;">No suppliers match your filter.</td></tr>`
@@ -1509,7 +1396,6 @@
             })
             .join("");
 
-    // Sub-table 1: Lead Times
     const ltSup = $("lt-supplier-filter").value;
     const ltRows = getRows("lead_times")
       .filter((r) => ltSup === "ALL" || r.supplier_id === ltSup)
@@ -1530,7 +1416,6 @@
             })
             .join("");
 
-    // Sub-table 2: Weekly Capacity Bookings
     const capSup = $("cap-supplier-filter").value;
     const capRows = analysisRows
       .filter((r) => capSup === "ALL" || r.supplier_id === capSup)
@@ -1568,7 +1453,6 @@
     const feasLower = String(row.feasibility_status || "").toLowerCase();
     const prodLower = String(row.production_feasibility || row.production_status || "").toLowerCase();
 
-    // 1. Check explicit infeasibility / unapproved substitute / capacity violation flags in source data
     if (feasLower.includes("not_approved") || feasLower.includes("unapproved") || optLower.includes("unapproved")) {
       issues.push("Substitute SKU not approved by policy");
     }
@@ -1576,7 +1460,6 @@
       issues.push("Exceeds available capacity");
     }
 
-    // 2. Check supplier weekly capacity against supplier_capacity_analysis.csv / capacity_check.csv
     if (row.supplier_id && !["not applicable", "to be identified"].includes(row.supplier_id.toLowerCase())) {
       const capKey = `${row.supplier_id}|${row.week}`;
       const sca = lookups.supCapWeekMap.get(capKey);
@@ -1596,7 +1479,6 @@
       }
     }
 
-    // 3. Check production plan coverage if planned_units is explicitly 0
     if (row.planned_units !== undefined && row.planned_units !== "") {
       const planned = toNumber(row.planned_units, 0);
       if (planned <= 0 && optLower.includes("production")) {
@@ -1615,8 +1497,6 @@
   }
 
   function getMergedMitigations() {
-    // Merge rows across updated_mitigation_feasibility, mitigation_feasibility, mitigation_recommendations
-    // using "shortage_id|option" as composite key so all available columns combine seamlessly.
     const map = new Map();
     const sources = [
       getRows("mitigation_recommendations"),
@@ -1696,7 +1576,6 @@
               const planned = toNumber(r.planned_units);
               const remaining = toNumber(r.remaining_shortage);
 
-              // Service Impact from updated_mitigation_feasibility.csv
               let serviceHtml = `<span class="muted">Load updated_mitigation_feasibility.csv</span>`;
               if (planned !== null) {
                 const covPct = shUnits > 0 ? Math.min(100, (planned / shUnits) * 100) : 100;
@@ -1708,7 +1587,6 @@
                 serviceHtml = `<div class="cell-sub">${escapeHtml(r.feasibility_status)}</div>`;
               }
 
-              // Estimated Cost (show only if present in mitigation CSV; otherwise be explicit)
               const explicitCost =
                 r.estimated_cost !== undefined && r.estimated_cost !== ""
                   ? r.estimated_cost
@@ -1723,7 +1601,6 @@
                 costHtml = `<div class="muted">Not in CSV</div><div class="cell-sub">Shortage value: $${fmtInt(exposure)}</div>`;
               }
 
-              // Gate badge
               const gateBadge = r.gate.blocked
                 ? `<span class="badge badge-fail">BLOCKED</span><div class="cell-sub">${escapeHtml(r.gate.issues.join("; "))}</div>`
                 : r.feasibility_status && r.feasibility_status.includes("WITHIN CAPACITY")
@@ -1766,7 +1643,6 @@
 
   // ---------------- F. Data & Validation Rendering ----------------
   function renderValidation() {
-    // 1. final_validation_report.csv
     const vrBody = $("val-report-body");
     const vrBadge = $("val-report-badge");
     if (hasDataset("final_validation_report")) {
@@ -1801,7 +1677,6 @@
       vrBody.innerHTML = `<div class="empty-state">Load <code>final_validation_report.csv</code> to view final validation results.</div>`;
     }
 
-    // 2. Five Required Edge Cases
     const ecBody = $("edge-case-body");
     const ecBadge = $("edge-case-badge");
     const ecRows = hasDataset("edge_case_detection_results")
@@ -1852,7 +1727,6 @@
       ecBody.innerHTML = `<div class="empty-state">Load <code>edge_case_detection_results.csv</code> or <code>edge_case_test_results.csv</code> to inspect the 5 required edge cases.</div>`;
     }
 
-    // 3. Isolated Ground Truth Labels
     const gtBody = $("gt-body");
     const gtBadge = $("gt-badge");
     if (hasDataset("ground_truth")) {
@@ -1892,7 +1766,6 @@
       gtBody.innerHTML = `<div class="empty-state">Load <code>ground_truth.csv</code> to inspect isolated ground-truth test labels.</div>`;
     }
 
-    // 4. validation_summary.csv
     const vsBody = $("val-summary-body");
     const vsBadge = $("val-summary-badge");
     if (hasDataset("validation_summary")) {
@@ -1967,7 +1840,14 @@
   function updateImportModalChecklist() {
     const entries = Object.entries(DATASET_CATALOG);
     const loadedCount = Object.keys(state.datasets).length;
-    $("import-summary-text").textContent = `${loadedCount} of ${entries.length} datasets loaded`;
+    const modeLabel =
+      state.dataSourceMode === "sample"
+        ? "Sample Data"
+        : state.dataSourceMode === "custom"
+        ? "Custom Upload"
+        : "Empty";
+
+    $("import-summary-text").textContent = `${loadedCount} of ${entries.length} datasets active (${modeLabel})`;
 
     $("modal-dataset-checklist").innerHTML = entries
       .map(([key, spec]) => {
@@ -1998,7 +1878,6 @@
 
   // ---------------- Event Wiring ----------------
   function initEventListeners() {
-    // Sidebar navigation
     document.querySelectorAll(".nav-item").forEach((btn) => {
       btn.addEventListener("click", () => switchPage(btn.dataset.page));
     });
@@ -2007,14 +1886,21 @@
     $("sidebar-close-btn").addEventListener("click", closeMobileSidebar);
     $("sidebar-backdrop").addEventListener("click", closeMobileSidebar);
 
-    // Import Modal & Buttons
-    $("open-import-btn").addEventListener("click", openImportModal);
-    $("dash-manage-csv-btn").addEventListener("click", openImportModal);
+    // Upload Your Own CSVs modal triggers
+    ["open-import-btn", "dash-manage-csv-btn", "banner-upload-btn", "empty-upload-btn"].forEach((id) => {
+      $(id).addEventListener("click", openImportModal);
+    });
     $("close-import-btn").addEventListener("click", closeImportModal);
     $("done-import-btn").addEventListener("click", closeImportModal);
 
+    // Dismiss friendly sample banner
+    $("dismiss-sample-banner-btn").addEventListener("click", () => {
+      state.sampleBannerDismissed = true;
+      $("sample-info-banner").classList.add("hidden");
+    });
+
     // File / Folder inputs
-    ["quick-folder-input", "quick-files-input", "modal-folder-input", "modal-files-input"].forEach((id) => {
+    ["modal-folder-input", "modal-files-input"].forEach((id) => {
       $(id).addEventListener("change", (e) => {
         if (e.target.files && e.target.files.length > 0) {
           handleFileList(e.target.files);
@@ -2038,11 +1924,11 @@
       }
     });
 
-    // Demo Mode & Reset
-    $("quick-demo-btn").addEventListener("click", loadDemoMode);
-    $("modal-demo-btn").addEventListener("click", loadDemoMode);
-    $("reset-data-btn").addEventListener("click", resetAllData);
-    $("exit-demo-btn").addEventListener("click", resetAllData);
+    // Reset to Sample Data & Clear All
+    ["reset-data-btn", "banner-reset-sample-btn", "empty-reset-btn", "modal-reset-sample-btn"].forEach((id) => {
+      $(id).addEventListener("click", resetToSampleData);
+    });
+    $("modal-clear-all-btn").addEventListener("click", clearAllData);
 
     // Dashboard chart toggles
     $("chart-dvi-loc-btn").addEventListener("click", () => {
@@ -2099,7 +1985,6 @@
       });
     });
 
-    // Re-render charts cleanly on window resize
     window.addEventListener("resize", () => {
       if (state.activePage === "dashboard" || state.activePage === "suppliers") {
         renderAll();
@@ -2110,8 +1995,10 @@
   // ---------------- Boot ----------------
   document.addEventListener("DOMContentLoaded", () => {
     initEventListeners();
+    loadBundledSampleCSVs();
+    populateFilterDropdowns();
     renderAll();
     updateImportModalChecklist();
-    tryAutoLoadFromHttp();
+    tryRefreshSampleFromHttp();
   });
 })();

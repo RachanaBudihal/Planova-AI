@@ -10,9 +10,10 @@ This `prototype/` folder contains a standalone, zero-backend HTML/CSS/JavaScript
 
 - `index.html` — Application shell and page structure for all 6 dashboard modules.
 - `styles.css` — Enterprise navy-blue, white, and light-blue responsive stylesheet.
+- `sampleData.js` — Verbatim snapshot of the project's `Planova/data/*.csv` datasets so the dashboard loads immediately with zero setup (even when opened directly from disk via `file://`).
 - `csvParser.js` — Dependency-free CSV parser, schema validator, and Planova dataset registry.
 - `charts.js` — Dependency-free interactive SVG charts with hover tooltips.
-- `app.js` — Application state, CSV joins, KPI calculation, capacity/policy gating, filtering, and rendering.
+- `app.js` — Application state, automatic sample loading, optional CSV upload, CSV joins, KPI calculation, capacity/policy gating, filtering, and rendering.
 - `README.md` — Setup and usage guide (this file).
 
 ---
@@ -24,28 +25,20 @@ No Python, Node.js, or build step is required.
 ### Option A: Open directly in your browser (simplest)
 1. Navigate to `Planova/prototype/`.
 2. Double-click `index.html` to open it in Chrome, Edge, or Firefox.
-3. Click **Select `data/` Folder** (or **Import CSVs**) and choose `Planova/data`.
+3. The dashboard immediately loads and displays the project's sample CSV datasets automatically—no upload is required.
 
 ### Option B: Run via a local static server (optional)
-If you serve the parent `Planova/` folder with any static HTTP server (for example, VS Code Live Server or `npx serve .` from `Planova/`), opening `/prototype/` will automatically fetch the CSV files from `../data/`.
+If you serve the parent `Planova/` folder with any static HTTP server (for example, VS Code Live Server), opening `/prototype/index.html` will automatically load the CSV files directly from `../data/`.
 
 ---
 
-## 3. How to Load Your Existing CSV Files
+## 3. Uploading Your Own CSVs (Optional)
 
-1. Click **Import CSVs** in the top-right header (or **Select `data/` Folder** on the welcome banner).
-2. Choose either:
-   - **Select `data/` Folder** to load all recognised Planova CSV files from `Planova/data/` in one click, **or**
-   - **Choose CSV Files** / drag-and-drop individual `.csv` files.
-3. Recognised datasets include:
-   - Master data: `sku.csv`, `location.csv`, `supplier.csv`
-   - Planning inputs: `forecast_demand.csv`, `inventory.csv`, `integrated_planning.csv` (optional)
-   - Supply & capacity: `lead_times.csv`, `purchase_orders.csv`, `supplier_capacity.csv`, `supplier_capacity_analysis.csv`, `capacity_check.csv`
-   - Shortages: `shortages.csv`, `shortage_explanations.csv`, `integrated_shortages.csv`
-   - Mitigation: `mitigation_recommendations.csv`, `mitigation_feasibility.csv`, `updated_mitigation_feasibility.csv`, `production_capacity.csv`, `production_plan.csv`
-   - Validation & evaluation: `final_validation_report.csv`, `validation_summary.csv`, `edge_case_detection_results.csv`, `edge_case_test_results.csv`, `ground_truth.csv`
-4. Click **Reset Data** at any time to clear all imported datasets.
-5. If you want a quick preview without loading files, click **Load Demo Mode (Small Sample)**—this is clearly marked with a warning banner and is never loaded silently.
+CSV upload is completely optional:
+1. Click **Upload Your Own CSVs** in the top header (or on the welcome banner).
+2. Drag-and-drop `.csv` files, click **Choose CSV Files**, or click **Select Folder** to upload your own datasets.
+3. By default, uploading custom CSVs replaces the sample workspace so any un-uploaded dataset honestly displays as `Unavailable` (no fake data is generated).
+4. Click **Reset to Sample Data** at any time to restore the original project sample datasets.
 
 ---
 
